@@ -23,6 +23,13 @@ class CodingAgent:
         self.tools = [run_bash, read_file, write_file, edit_file, update_todo]
         self.verbose = verbose
         self.messages = []
+        self.tool_map = {
+            "run_bash": run_bash,
+            "read_file": read_file,
+            "write_file": write_file,
+            "edit_file": edit_file,
+            "update_todo": update_todo
+        }
         self.system_prompt = f"""You are a coding agent at {WORKDIR}. Use the available tools to solve tasks. Act, don't explain excessively.
 
                 You have access to these tools:

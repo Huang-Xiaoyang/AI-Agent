@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.arts/settings.json
+.vscode/settings.json
+doc/记录.txt
+*.txt

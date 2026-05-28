@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """DeepSeek Coding Agent - 主入口"""
 
-from config import WORKDIR
 from agent import CodingAgent
+from config import WORKDIR
+
 
 def main():
     """主函数"""
@@ -10,10 +11,9 @@ def main():
     print(f"📁 Working directory: {WORKDIR}")
     print("💡 Type 'exit' or 'q' to quit")
     print("📝 Type 'todo' to view current tasks\n")
-    
+
     # 初始化 agent
     agent = CodingAgent(verbose=True)
-    round_since_todo = 0
     # 交互循环
     while True:
         try:

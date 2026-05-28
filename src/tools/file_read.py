@@ -1,6 +1,8 @@
 from langchain.tools import tool
-from tools.base import safe_path
+
 from config import MAX_TOOL_OUTPUT_LENGTH
+from tools.base import safe_path
+
 
 @tool
 def read_file(path: str, limit: int = None) -> str:
@@ -9,10 +11,10 @@ def read_file(path: str, limit: int = None) -> str:
         fp = safe_path(path)
         text = fp.read_text(encoding='utf-8', errors='replace')
         lines = text.splitlines()
-        
+
         if limit and limit < len(lines):
             lines = lines[:limit]
-        
+
         return "\n".join(lines)[:MAX_TOOL_OUTPUT_LENGTH]
     except FileNotFoundError:
         return f"Error: File not found - {path}"

@@ -13,7 +13,7 @@ def main():
     print("📝 Type 'todo' to view current tasks\n")
 
     # 初始化 agent
-    agent = CodingAgent(verbose=True)
+    agent = CodingAgent(verbose=False)
     # 交互循环
     while True:
         try:

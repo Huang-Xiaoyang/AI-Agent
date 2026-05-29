@@ -24,15 +24,9 @@ class CodingAgent:
         self.tools = [run_bash, read_file, write_file, edit_file, update_todo]
         self.verbose = verbose
         self.messages = []
-        self.tool_map = {
-            "run_bash": run_bash,
-            "read_file": read_file,
-            "write_file": write_file,
-            "edit_file": edit_file,
-            "update_todo": update_todo
-        }
+        self.tool_map = {tool.name: tool for tool in self.tools}
         self.system_prompt = f"""You are a coding agent at {WORKDIR}. \
-Use the available tools to solve tasks. Act, don't explain excessively.
+                Use the available tools to solve tasks. Act, don't explain excessively.
 
                 You have access to these tools:
                 - run_bash: Execute shell commands
@@ -109,8 +103,10 @@ Use the available tools to solve tasks. Act, don't explain excessively.
 
             self.messages.append(HumanMessage(content=query))
             self.round_since_todo = 0
-
+            response_content = ""
+            round = 0
             while True:
+                round+=1
                 # 构建完整的消息列表（系统消息 + 历史 + 当前）
                 full_messages = [SystemMessage(content=self.system_prompt)] + self.messages
 
@@ -138,7 +134,7 @@ Use the available tools to solve tasks. Act, don't explain excessively.
                         if last_msg.get("role") == "assistant":
                             response_content = last_msg.get("content")
                             tool_calls = last_msg.get("tool_calls", [])
-                if not tool_calls:
+                if (not tool_calls) or (round >=10000) :
                     if response_content:
                         # 添加助手回复到历史
                         self.messages.append(AIMessage(content=response_content))
@@ -154,10 +150,7 @@ Use the available tools to solve tasks. Act, don't explain excessively.
                 self.messages.extend(tool_results)
                 # 检查是否需要提醒更新 todo
                 if self.round_since_todo >= 3:
-                    reminder = ToolMessage(
-                        content="<reminder>Update your todos to track progress.</reminder>",
-                        tool_call_id="reminder"
-                    )
+                    reminder = HumanMessage(content="Reminder:Update your todos to track progress.")
                     self.messages.append(reminder)
                     self.round_since_todo = 0
                 # 如果有响应内容，也添加到历史

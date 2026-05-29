@@ -1,11 +1,15 @@
+from pathlib import Path
+import re
+
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_deepseek import ChatDeepSeek
+import yaml
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, WORKDIR
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, WORKDIR, MAX_AGENT_ITERATIONS, SKILL_DIR
 from tools import edit_file, read_file, run_bash, update_todo, write_file
 from tools.base import TODO
-
+from tools.load_skill import SkillLoader, create_load_skill_tool
 
 class CodingAgent:
     """编码助手 Agent"""
@@ -18,10 +22,11 @@ class CodingAgent:
             base_url=DEEPSEEK_BASE_URL,
             temperature=0.7
         )
-
+        self.SKILL_LOADER = SkillLoader(SKILL_DIR)
+        load_skill_tool = create_load_skill_tool(self.SKILL_LOADER)
         self.round_since_todo = 0
         # 工具列表
-        self.tools = [run_bash, read_file, write_file, edit_file, update_todo]
+        self.tools = [run_bash, read_file, write_file, edit_file, update_todo, load_skill_tool]
         self.verbose = verbose
         self.messages = []
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -34,6 +39,9 @@ class CodingAgent:
                 - write_file: Create or overwrite files
                 - edit_file: Replace text in files
                 - update_todo: Track your progress on multi-step tasks
+                - load skills: Use load_skill to access specialized knowledge before tackling unfamiliar topics.
+                    Skills available:
+                    {self.SKILL_LOADER.get_descriptions()}
 
                 Always follow these rules:
                 1. For multi-step tasks, use update_todo to track your progress
@@ -134,7 +142,7 @@ class CodingAgent:
                         if last_msg.get("role") == "assistant":
                             response_content = last_msg.get("content")
                             tool_calls = last_msg.get("tool_calls", [])
-                if (not tool_calls) or (round >=10000) :
+                if (not tool_calls) or (round >= MAX_AGENT_ITERATIONS) :
                     if response_content:
                         # 添加助手回复到历史
                         self.messages.append(AIMessage(content=response_content))

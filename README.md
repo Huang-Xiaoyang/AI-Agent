@@ -1,6 +1,6 @@
 # Learn-Agent
 
-基于 LangChain + DeepSeek 的 AI 编码助手 Agent，具备工具调用、文件操作、命令执行和任务跟踪能力。
+基于 LangChain + DeepSeek 的 AI Agent，具备工具调用、文件操作、命令执行、任务跟踪、长期记忆（FAISS + MySQL + Redis）能力。
 
 ## 功能特性
 
@@ -8,23 +8,36 @@
 - **Bash 命令执行** — 安全执行 Shell 命令，内置危险命令拦截
 - **文件操作** — 读取、创建、编辑文件，支持路径安全校验
 - **任务管理** — 多步骤任务自动拆分与进度跟踪
+- **技能系统** — 按需加载专业领域知识（Skill Loader）
+- **长期记忆** — FAISS + MySQL + Redis 三层记忆架构
+- **语义检索** — 基于 Embedding 的历史对话语义搜索
 - **安全防护** — 路径遍历攻击防护、危险命令黑名单、输出长度限制
 
 ## 架构
 
 ```
 src/
-├── main.py              # 交互式命令行入口
-├── agent.py             # Agent 核心逻辑（工具调用循环）
-├── config.py            # 全局配置管理
+├── main.py # 交互式命令行入口
+├── agent.py # Agent 核心逻辑（工具调用循环 + 记忆系统）
+├── config.py # 全局配置管理
 └── tools/
-    ├── base.py          # safe_path 路径安全 + TodoManager
-    ├── bash.py          # Shell 命令执行工具
-    ├── file_read.py     # 文件读取工具
-    ├── file_write.py    # 文件写入工具
-    ├── file_edit.py     # 文件编辑工具（精确替换）
-    └── todo.py          # 待办事项管理工具
+    ├── base.py # safe_path 路径安全 + TodoManager
+    ├── bash.py # Shell 命令执行工具
+    ├── file_read.py # 文件读取工具
+    ├── file_write.py # 文件写入工具
+    ├── file_edit.py # 文件编辑工具（精确替换）
+    ├── todo.py # 待办事项管理工具
+    ├── load_skill.py # 技能加载器（按需加载专业知识）
+    ├── memory.py # 长期记忆模块（Redis + MySQL）
 ```
+
+## 记忆架构
+
+| 层级 | 存储 | 用途 | 时效 |
+|------|------|------|------|
+| L1 | Redis | 当前会话上下文 | 1小时 |
+| L2 | FAISS | 语义记忆（相似话题检索） | 持久 |
+| L3 | MySQL | 结构化记忆（事实、偏好、对话存档） | 持久 |
 
 ## 工具清单
 
@@ -35,6 +48,7 @@ src/
 | `write_file` | 创建/覆盖文件 | 路径逃逸防护、自动创建父目录 |
 | `edit_file` | 精确替换文本 | 路径逃逸防护、仅替换首次匹配 |
 | `update_todo` | 更新任务列表 | 限制仅一个进行中任务 |
+| `load_skill` | 加载专业技能 | 按需加载 SKILL.md 文档 |
 
 ## 快速开始
 
@@ -42,6 +56,8 @@ src/
 
 - Python 3.11+
 - DeepSeek API Key
+- Docker（用于 MySQL + Redis）
+
 
 ### 2. 安装
 
@@ -51,6 +67,47 @@ cd Learn-Agent
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# 启动 MySQL
+docker run -d --name agent-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=agent_memory -e MYSQL_DATABASE=agent_memory -v mysql_data:/var/lib/mysql mysql:latest --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+# 启动 Redis
+docker run -d --name agent-redis -p 6380:6379 redis:latest redis-server --requirepass agent_memory --appendonly yes
+
+# 初始化数据库表
+docker exec -it agent-mysql mysql -uroot -pagent_memory -e "
+USE agent_memory;
+
+CREATE TABLE IF NOT EXISTS user_memories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(100) NOT NULL,
+    memory_type VARCHAR(50) DEFAULT 'fact',
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_archive (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(100) NOT NULL,
+    user_id VARCHAR(100),
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session_id (session_id),
+    INDEX idx_user_id (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS faiss_mapping (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    faiss_position INT NOT NULL,
+    text TEXT NOT NULL,
+    user_id VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_faiss_pos (faiss_position),
+    INDEX idx_user_id (user_id)
+);
+"
 ```
 
 ### 3. 配置
@@ -81,8 +138,11 @@ python main.py
 ```
 🤖 DeepSeek Coding Agent Started
 📁 Working directory: /path/to/project
+👤 User: username
 💡 Type 'exit' or 'q' to quit
 📝 Type 'todo' to view current tasks
+🧠 Type 'memories' to see FAISS memories
+🗑️  Type 'clear' to clear current session
 
 user >> 在当前目录创建一个 Python 快速排序实现
 assistant >> 已创建 quicksort.py，包含快速排序函数及测试用例...
@@ -114,12 +174,14 @@ user >> todo
 - **任务约束**：同一时刻仅允许一个任务处于 `in_progress` 状态
 
 ## 技术栈
-
-- **LangChain** — LLM 应用框架与工具调用
-- **LangGraph** — Agent 执行引擎
+- **LangChain / LangGraph** — LLM 应用框架与 Agent 执行引擎
 - **DeepSeek** — 大语言模型
-- **Pydantic** — 数据校验
+- **FAISS** — 向量检索引擎
+- **Sentence Transformers** — Embedding 模型（BAAI/bge-small-zh）
+- **Redis** — 短期记忆缓存
+- **MySQL** — 长期结构化存储
 - **tiktoken** — Token 计数
+- **Pydantic** — 数据校验
 
 ## License
 

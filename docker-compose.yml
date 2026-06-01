@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # MySQL - 长期记忆存储
+  mysql:
+    image: mysql:8.0
+    container_name: agent-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: agent_memory
+      MYSQL_DATABASE: agent_memory
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pagent_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - 短期/工作记忆
+  redis:
+    image: redis:7-alpine
+    container_name: agent-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --requirepass agent_memory --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "agent_memory", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Insight - Redis 可视化工具（可选）
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: agent-redis-insight
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/db
+    restart: unless-stopped
+    networks:
+      - agent-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Adminer - MySQL 可视化工具（可选）
+  adminer:
+    image: adminer:latest
+    container_name: agent-adminer
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - agent-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+networks:
+  agent-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  redisinsight_data:

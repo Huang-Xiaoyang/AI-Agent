@@ -16,19 +16,27 @@
 ## 架构
 
 ```
-src/
-├── main.py # 交互式命令行入口
-├── agent.py # Agent 核心逻辑（工具调用循环 + 记忆系统）
-├── config.py # 全局配置管理
-└── tools/
-    ├── base.py # safe_path 路径安全 + TodoManager
-    ├── bash.py # Shell 命令执行工具
-    ├── file_read.py # 文件读取工具
-    ├── file_write.py # 文件写入工具
-    ├── file_edit.py # 文件编辑工具（精确替换）
-    ├── todo.py # 待办事项管理工具
-    ├── load_skill.py # 技能加载器（按需加载专业知识）
-    ├── memory.py # 长期记忆模块（Redis + MySQL）
+Learn-Agent/
+    ├── docker-compose.yml # Docker 编排配置
+    ├── init.sql # 数据库初始化脚本
+    ├── .env.example # 环境变量模板
+    ├── requirements.txt # Python 依赖
+    ├── README.md # 项目文档
+    └── src/
+        ├── main.py
+        ├── agent.py
+        ├── config.py
+        └── tools/
+            ├── init.py
+            ├── base.py
+            ├── bash.py
+            ├── file_read.py
+            ├── file_write.py
+            ├── file_edit.py
+            ├── todo.py
+            ├── load_skill.py
+            ├── memory.py
+            └── faiss_manager.py
 ```
 
 ## 记忆架构
@@ -182,6 +190,24 @@ user >> todo
 - **MySQL** — 长期结构化存储
 - **tiktoken** — Token 计数
 - **Pydantic** — 数据校验
+
+## 使用说明
+
+别人克隆项目后，只需要：
+
+```bash
+# 1. 启动所有依赖（MySQL + Redis + 可视化工具）
+docker-compose up -d
+
+# 2. 安装 Python 依赖
+pip install -r requirements.txt
+
+# 3. 配置 API Key
+cp .env.example .env
+# 编辑 .env 填入 API Key
+
+# 4. 运行
+cd src && python main.py
 
 ## License
 

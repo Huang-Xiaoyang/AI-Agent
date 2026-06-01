@@ -75,47 +75,6 @@ cd Learn-Agent
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 启动 MySQL
-docker run -d --name agent-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=agent_memory -e MYSQL_DATABASE=agent_memory -v mysql_data:/var/lib/mysql mysql:latest --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-
-# 启动 Redis
-docker run -d --name agent-redis -p 6380:6379 redis:latest redis-server --requirepass agent_memory --appendonly yes
-
-# 初始化数据库表
-docker exec -it agent-mysql mysql -uroot -pagent_memory -e "
-USE agent_memory;
-
-CREATE TABLE IF NOT EXISTS user_memories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(100) NOT NULL,
-    memory_type VARCHAR(50) DEFAULT 'fact',
-    content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_user_id (user_id)
-);
-
-CREATE TABLE IF NOT EXISTS conversation_archive (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id VARCHAR(100) NOT NULL,
-    user_id VARCHAR(100),
-    role VARCHAR(20) NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_session_id (session_id),
-    INDEX idx_user_id (user_id)
-);
-
-CREATE TABLE IF NOT EXISTS faiss_mapping (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    faiss_position INT NOT NULL,
-    text TEXT NOT NULL,
-    user_id VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_faiss_pos (faiss_position),
-    INDEX idx_user_id (user_id)
-);
-"
 ```
 
 ### 3. 配置

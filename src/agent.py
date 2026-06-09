@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from langsmith import traceable
 import tiktoken
 import uuid
 from langchain.agents import create_agent
@@ -191,7 +192,7 @@ class CodingAgent:
                 if self.verbose:
                     print(f"💾 记住: {query[:50]}...")
                 break
-
+    @traceable 
     def run(self, query: str) -> str:
         """执行用户查询"""
         res = None

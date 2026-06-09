@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """DeepSeek Coding Agent - 主入口 with FAISS"""
 import os
+from dotenv import load_dotenv
+from langsmith import traceable
 from agent import CodingAgent
 from config import WORKDIR
 
+load_dotenv()
+
+os.environ["LANGSMITH_TRACING"] = os.getenv("LANGSMITH_TRACING", "false")
+os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
+os.environ["LANGSMITH_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "default-project")
 
 def main():
     """主函数"""

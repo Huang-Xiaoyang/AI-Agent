@@ -19,7 +19,7 @@ from tools.faiss_manager import FAISSManager
 
 
 class CodingAgent:
-    """Agent with FAISS + MySQL"""
+    """Agent with FAISS + MySQL - 使用流式模式"""
 
     def __init__(self, user_id: str = "NaN", verbose: bool = True):
         # 用户标识
@@ -111,15 +111,15 @@ class CodingAgent:
         """用 LLM 判断是否需要记住"""
         prompt = f"""判断这句话是否包含用户的重要信息（偏好、事实、个人信息）。
 
-规则：
-- 用户明确说出"我喜欢/习惯/在/叫..." → 保存
-- 包含个人身份、工作、学习信息 → 保存  
-- 包含技术偏好、工具习惯 → 保存
-- 普通问答、闲聊、测试 → 不保存
+        规则：
+        - 用户明确说出"我喜欢/习惯/在/叫..." → 保存
+        - 包含个人身份、工作、学习信息 → 保存  
+        - 包含技术偏好、工具习惯 → 保存
+        - 普通问答、闲聊、测试 → 不保存
 
-文本："{query}"
+        文本："{query}"
 
-只回答"是"或"否"："""
+        只回答"是"或"否"："""
         response = self.model.invoke(prompt)
         return "是" in response.content
     
@@ -144,45 +144,6 @@ class CodingAgent:
         
         return memory_text
     
-    def _execute_tool_calls(self, tool_calls: list) -> list:
-        """执行工具调用并返回结果"""
-        results = []
-        used_todo = False
-
-        for tool_call in tool_calls:
-            tool_name = tool_call.get("name", "")
-            tool_args = tool_call.get("args", {})
-            tool_id = tool_call.get("id", "")
-
-            if self.verbose:
-                print(f"\n🔧 Calling tool: {tool_name}")
-                print(f"📝 Arguments: {tool_args}")
-
-            handler = self.tool_map.get(tool_name)
-            if handler:
-                try:
-                    output = handler(**tool_args)
-                    if self.verbose:
-                        print(f"Result: {str(output)[:200]}")
-                except Exception as e:
-                    output = f"Error executing {tool_name}: {str(e)}"
-                    if self.verbose:
-                        print(f"Error: {output}")
-            else:
-                output = f"Unknown tool: {tool_name}"
-                if self.verbose:
-                    print(f"Unknown tool: {tool_name}")
-
-            results.append(ToolMessage(
-                content=str(output),
-                tool_call_id=tool_id
-            ))
-
-            if tool_name == "update_todo":
-                used_todo = True
-
-        return results, used_todo
-    
     def _remember_fact(self, query: str, response: str):
         """自动保存重要信息"""
         keywords = ["我喜欢", "我偏好", "我习惯", "请记住", "记住", "我叫", "我的名字", "我在", "我实习", "我的岗位"]
@@ -192,10 +153,10 @@ class CodingAgent:
                 if self.verbose:
                     print(f"💾 记住: {query[:50]}...")
                 break
+
     @traceable 
-    def run(self, query: str) -> str:
-        """执行用户查询"""
-        res = None
+    def run_streaming(self, query: str):
+        """流式执行用户查询 - 实时显示每个步骤"""
         try:
             if not query or not query.strip():
                 return "Please provide a valid query."
@@ -220,86 +181,94 @@ class CodingAgent:
             # 3. 更新 system prompt 中的记忆上下文
             current_prompt = self.system_prompt
             if memory_context:
-                # 替换或添加记忆上下文
                 if "## 相关历史记忆" in current_prompt:
-                    # 替换已有的
                     import re
                     current_prompt = re.sub(r'## 相关历史记忆\n.*?(?=\n##|$)', memory_context, current_prompt, flags=re.DOTALL)
                 else:
-                    # 添加到开头
                     current_prompt = memory_context + "\n" + current_prompt
             
-            # 4. 添加用户消息
-            self.messages.append(HumanMessage(content=query))
-            self.round_since_todo = 0
-            response_content = ""
-            round = 0
+            # 4. 构建初始消息
+            messages = [HumanMessage(content=query)]
             
-            while True:
-                round += 1
-                # 构建消息列表
-                full_messages = [SystemMessage(content=current_prompt)] + self.messages
-
-                result = self.agent.invoke({"messages": full_messages})
-
-                tool_calls = []
-                if "messages" in result:
-                    last_msg = result["messages"][-1]
-
-                    if isinstance(last_msg, AIMessage):
-                        response_content = last_msg.content
-                        if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
-                            tool_calls = last_msg.tool_calls
-                    elif isinstance(last_msg, dict):
-                        if last_msg.get("role") == "assistant":
-                            response_content = last_msg.get("content")
-                            tool_calls = last_msg.get("tool_calls", [])
-                            
-                if (not tool_calls) or (round >= MAX_AGENT_ITERATIONS):
-                    if response_content:
-                        self.messages.append(AIMessage(content=response_content))
-                        res = response_content
-                        break
-                    else:
-                        res = "Task completed."
-                        break
-
-                tool_results, used_todo = self._execute_tool_calls(tool_calls)
-                self.round_since_todo = 0 if used_todo else self.round_since_todo + 1
-                self.messages.extend(tool_results)
-                
-                if self.round_since_todo >= 3:
-                    reminder = HumanMessage(content="Reminder: Update your todos to track progress.")
-                    self.messages.append(reminder)
-                    self.round_since_todo = 0
+            # 5. 流式执行 Agent
+            final_answer = None
+            
+            for chunk in self.agent.stream(
+                {"messages": messages},
+                stream_mode="updates"
+            ):
+                for step_name, step_data in chunk.items():
+                    if self.verbose:
+                        print(f"\n{'='*50}")
+                        print(f"📡 Step: {step_name}")
+                        print(f"{'='*50}")
                     
-                if response_content:
-                    self.messages.append(AIMessage(content=response_content))
+                    # 获取最新的消息
+                    if "messages" in step_data and step_data["messages"]:
+                        last_msg = step_data["messages"][-1]
+                        
+                        # 根据步骤类型处理输出
+                        if step_name == "model":
+                            # 模型输出（可能是工具调用或最终答案）
+                            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                                # 工具调用请求
+                                for tool_call in last_msg.tool_calls:
+                                    tool_name = tool_call.get("name") if isinstance(tool_call, dict) else getattr(tool_call, "name", "")
+                                    tool_args = tool_call.get("args") if isinstance(tool_call, dict) else getattr(tool_call, "args", {})
+                                    
+                                    yield f"🤔 思考: 需要调用 {tool_name}\n"
+                                    yield f"📝 参数: {tool_args}\n"
+                            else:
+                                # 最终答案
+                                content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                                if content:
+                                    final_answer = content
+                                    yield f"💡 {content}\n"
+                        
+                        elif step_name == "tools":
+                            # 工具执行结果
+                            if isinstance(last_msg, ToolMessage):
+                                tool_name = getattr(last_msg, 'name', 'unknown')
+                                content = last_msg.content
+                                yield f"✅ 工具 {tool_name} 执行完成\n"
+                                # 显示结果的前200个字符
+                                result_preview = content[:200] + '...' if len(content) > 200 else content
+                                yield f"📊 结果: {result_preview}\n"
+                        
+                        elif step_name == "agent":
+                            # Agent 整体输出
+                            content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                            if content:
+                                yield f"🤖 {content}\n"
             
-            # 5. 保存助手回复
-            if res:
-                # 保存到会话
-                self.memory.add_to_session(self.session_id, "assistant", res)
-                self.memory.archive_conversation(self.session_id, self.user_id, "assistant", res)
+            # 保存最终答案到记忆
+            if final_answer:
+                self.memory.add_to_session(self.session_id, "assistant", final_answer)
+                self.memory.archive_conversation(self.session_id, self.user_id, "assistant", final_answer)
                 
                 # 保存到 FAISS
-                chunks = self.split_by_tokens(res)
+                chunks = self.split_by_tokens(final_answer)
                 vectors = self.embed_model.encode(chunks)
                 for i, chunk in enumerate(chunks):
                     if self.should_save_to_faiss(chunk):
                         self.faiss_manager.add(chunk, vectors[i], self.user_id)
-                        if self.verbose:
-                            print(f"📚 已保存回复到 FAISS: {chunk[:50]}...")
                 
-                # 自动记住重要信息
-                self._remember_fact(query, res)
+                self._remember_fact(query, final_answer)
             
-            return res
-
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return f"Error in agent execution: {str(e)}"
+            yield f"Error: {str(e)}"
+    
+    @traceable 
+    def run(self, query: str) -> str:
+        """非流式执行（兼容旧接口）"""
+        result_parts = []
+        for chunk in self.run_streaming(query):
+            result_parts.append(chunk)
+            if self.verbose:
+                print(chunk, end="", flush=True)
+        return "".join(result_parts)
     
     def close(self):
         """关闭连接"""

@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""DeepSeek Coding Agent - 主入口 with FAISS"""
+"""DeepSeek Coding Agent - 主入口 with FAISS and Streaming"""
 import os
+from dotenv import load_dotenv
+from langsmith import traceable
 from agent import CodingAgent
 from config import WORKDIR
 
+load_dotenv()
+
+os.environ["LANGSMITH_TRACING"] = os.getenv("LANGSMITH_TRACING", "false")
+os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
+os.environ["LANGSMITH_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "default-project")
 
 def main():
     """主函数"""
-    print("\033[32m🤖 DeepSeek Coding Agent Started\033[0m")
+    print("\033[32m🤖 DeepSeek Coding Agent Started (Streaming Mode)\033[0m")
     print(f"📁 Working directory: {WORKDIR}")
     
     user_id = "NaN"
@@ -16,9 +24,11 @@ def main():
     print("💡 Type 'exit' or 'q' to quit")
     print("📝 Type 'todo' to view current tasks")
     print("🧠 Type 'memories' to see FAISS memories")
-    print("🗑️  Type 'clear' to clear current session\n")
+    print("🗑️  Type 'clear' to clear current session")
+    print("⚡ Streaming mode enabled - you'll see each step in real-time!\n")
 
-    agent = CodingAgent(user_id=user_id, verbose=False)
+    # 创建 Agent，启用详细输出
+    agent = CodingAgent(user_id=user_id, verbose=True)
     
     try:
         while True:
@@ -55,9 +65,12 @@ def main():
             if not query:
                 continue
             
-            print()
-            response = agent.run(query)
-            print(f"\n\033[32massistant >>\033[0m {response}\n")
+            # 使用流式输出
+            print("\n\033[32massistant >>\033[0m")
+            for chunk in agent.run_streaming(query):
+                print(chunk, end="", flush=True)
+            print("\n")  # 添加换行
+            
     finally:
         agent.close()
 

@@ -21,7 +21,7 @@ def run_bash(command: str) -> str:
             capture_output=True,
             text=True,
             encoding='utf-8',
-            errors='replace',  # 替换无法解码的字符
+            errors='replace',
             timeout=BASH_TIMEOUT
         )
 

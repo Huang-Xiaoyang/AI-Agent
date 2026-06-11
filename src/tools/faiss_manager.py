@@ -3,7 +3,7 @@ import os
 import faiss
 import numpy as np
 from typing import List, Dict, Optional
-
+import mysql.connector
 
 class FAISSManager:
     """FAISS 索引 + MySQL 映射管理器"""
@@ -36,7 +36,6 @@ class FAISSManager:
                 INDEX idx_user_id (user_id)
             )
         """)
-        self.mysql_conn.commit()
         cursor.close()
     
     def add(self, text: str, embedding: np.ndarray, user_id: str = "NaN") -> int:
@@ -53,7 +52,6 @@ class FAISSManager:
             "INSERT INTO faiss_mapping (faiss_position, text, user_id) VALUES (%s, %s, %s)",
             (position, text, user_id)
         )
-        self.mysql_conn.commit()
         cursor.close()
         
         return position
@@ -67,35 +65,40 @@ class FAISSManager:
         distances, positions = self.index.search(query_vec, k)
         
         results = []
-        cursor = self.mysql_conn.cursor()
         
         for pos, dist in zip(positions[0], distances[0]):
             if pos != -1:
-                cursor.execute(
-                    "SELECT text FROM faiss_mapping WHERE faiss_position = %s AND user_id = %s",
-                    (int(pos), user_id)
-                )
-                row = cursor.fetchone()
-                if row:
-                    results.append({
-                        "text": row[0],
-                        "position": int(pos),
-                        "distance": float(dist),
-                        "similarity": 1 / (1 + float(dist))
-                    })
+                # ✅ 每次查询使用独立的游标
+                cursor = self.mysql_conn.cursor(buffered=True)
+                try:
+                    cursor.execute(
+                        "SELECT text FROM faiss_mapping WHERE faiss_position = %s AND user_id = %s",
+                        (int(pos), user_id)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        results.append({
+                            "text": row[0],
+                            "position": int(pos),
+                            "distance": float(dist),
+                            "similarity": 1 / (1 + float(dist))
+                        })
+                finally:
+                    cursor.close()
         
-        cursor.close()
         return results
     
     def get_all_memories(self, user_id: str = "NaN", limit: int = 100) -> List[Dict]:
         """获取用户所有记忆"""
         cursor = self.mysql_conn.cursor()
-        cursor.execute(
-            "SELECT faiss_position, text, created_at FROM faiss_mapping WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
-            (user_id, limit)
-        )
-        rows = cursor.fetchall()
-        cursor.close()
+        try:
+            cursor.execute(
+                "SELECT faiss_position, text, created_at FROM faiss_mapping WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, limit)
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
         return [{"position": r[0], "text": r[1], "created_at": r[2]} for r in rows]
     
     def save(self, filepath: str = None):
